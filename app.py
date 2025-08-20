@@ -643,14 +643,16 @@ def getreview(x):
     response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?api_key={tmdb.api_key}&language=en-US&page=1")
     data_json = response.json()
     return data_json
-
 def getrating(title):
-    movie_review = []
+    reviews = []
     data = getreview(title)
-    for i in data['results']:
-        pred = clt.predict(vectorizer.transform([i['content']]))
-        movie_review.append({"review": i['content'], "rating": "Good" if pred[0] == 1 else "Bad"})
-    return movie_review
+    for i in data.get('results', []):
+        reviews.append({
+            "review": i['content'],
+            "sentiment": "Not classified"
+        })
+    return reviews
+
 
 def get_data2(x):
     result = tmdb_movie.search(x)
