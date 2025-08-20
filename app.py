@@ -617,7 +617,7 @@ def train_models():
     global movies_data, vectorizer, cosine_sim, clf, clf_vectorizer
 
     # --- 1. Train recommender ---
-    movies_data = pd.read_csv("movies_data.csv")
+    movies_data = pd.read_csv("Main_data.csv")
     movies_data['comb'] = movies_data['comb'].fillna('')
 
     vectorizer = TfidfVectorizer()
@@ -650,7 +650,7 @@ def load_models():
     global vectorizer, clf, clf_vectorizer, movies_data, cosine_sim
 
     try:
-        movies_data = pd.read_csv("movies_data.csv")
+        movies_data = pd.read_csv("Main_data.csv")
         movies_data['comb'] = movies_data['comb'].fillna('')
 
         with open('vectorizer.pkl', 'rb') as f:
