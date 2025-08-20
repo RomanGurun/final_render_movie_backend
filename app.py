@@ -565,7 +565,6 @@
 
 # # ================================= RENDER ==================================================
 # ================== Final app.py ==================
-
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import pandas as pd
@@ -643,16 +642,14 @@ def getreview(x):
     response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?api_key={tmdb.api_key}&language=en-US&page=1")
     data_json = response.json()
     return data_json
-def getrating(title):
-    reviews = []
-    data = getreview(title)
-    for i in data.get('results', []):
-        reviews.append({
-            "review": i['content'],
-            "sentiment": "Not classified"
-        })
-    return reviews
 
+def getrating(title):
+    movie_review = []
+    data = getreview(title)
+    for i in data['results']:
+        pred = clt.predict(vectorizer.transform([i['content']]))
+        movie_review.append({"review": i['content'], "rating": "Good" if pred[0] == 1 else "Bad"})
+    return movie_review
 
 def get_data2(x):
     result = tmdb_movie.search(x)
@@ -770,123 +767,81 @@ def store_movie(movieId, movie1, userId):
         writer.writerow(data.values())
     return jsonify(data)
 
-# @app.route('/score/<path:title1>/<path:title2>/')
-# def findscore(title1, title2):
-#     title1, title2 = unquote(title1), unquote(title2)
-#     movies_data = pd.read_csv('Main_data.csv')
-
-#     # Create 'comb' if missing and fill NaN with empty string
-#     if 'comb' not in movies_data.columns:
-#         movies_data['comb'] = movies_data['title_x'] + movies_data['genres']
-#     movies_data['comb'] = movies_data['comb'].fillna('')
-
-#     # Dynamically fetch missing movies and update movies_data and CSV
-#     for title in [title1, title2]:
-#         if title not in movies_data['title_x'].values:
-#             try:
-#                 result = tmdb_movie.search(title)
-#                 if not result:
-#                     continue
-#                 movie_id = result[0].id
-#                 details = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={tmdb.api_key}").json()
-#                 genre_names = ','.join([g['name'] for g in details.get("genres", [])])
-#                 new_row = {
-#                     'title_x': title,
-#                     'genres': genre_names,
-#                     'comb': title + genre_names
-#                 }
-
-#                 # Append to CSV
-#                 csv_file_path = 'Main_data.csv'
-#                 file_exists = os.path.exists(csv_file_path)
-#                 with open(csv_file_path, 'a', newline='', encoding='utf-8') as file:
-#                     writer = csv.DictWriter(file, fieldnames=['title_x', 'genres', 'comb'])
-#                     if not file_exists or os.stat(csv_file_path).st_size == 0:
-#                         writer.writeheader()
-#                     writer.writerow(new_row)
-
-#                 # Append to DataFrame in memory
-#                 movies_data = pd.concat([movies_data, pd.DataFrame([new_row])], ignore_index=True)
-#                 movies_data['comb'] = movies_data['comb'].fillna('')
-
-#             except Exception as e:
-#                 print(f"Error fetching or adding {title}: {e}")
-#                 return jsonify({'error': f"Could not process movie: {title}"}), 404
-
-#     count_vec = CountVectorizer()
-#     count_matrix = count_vec.fit_transform(movies_data['comb'])
-#     cosine_sim = cosine_similarity(count_matrix, count_matrix)
-
-#     try:
-#         idx1 = movies_data[movies_data['title_x'] == title1].index[0]
-#         idx2 = movies_data[movies_data['title_x'] == title2].index[0]
-#     except IndexError:
-#         return jsonify({'error': 'One or both titles not found'}), 404
-
-#     sim = cosine_sim[idx1, idx2]
-
-#     tfidf = TfidfVectorizer(stop_words='english').fit(movies_data['comb'])
-#     features = tfidf.transform(movies_data['comb']).toarray()
-
-#     euc = euclidean_distances([features[idx1]], [features[idx2]])[0][0]
-#     man = manhattan_distances([features[idx1]], [features[idx2]])[0][0]
-
-#     return jsonify({
-#         'cosineSimilarity': round(sim, 4),
-#         'euclideanDistance': round(euc, 4),
-#         'manhattanDistance': round(man, 4)
-#     })
-
-# if __name__ == '__main__':
-#     app.run(host='0.0.0.0', debug=True, port=5001)
-
 @app.route('/score/<path:title1>/<path:title2>/')
 def findscore(title1, title2):
     title1, title2 = unquote(title1), unquote(title2)
     movies_data = pd.read_csv('Main_data.csv')
 
-    # prepare 'comb'
+    # Create 'comb' if missing and fill NaN with empty string
     if 'comb' not in movies_data.columns:
         movies_data['comb'] = movies_data['title_x'] + movies_data['genres']
     movies_data['comb'] = movies_data['comb'].fillna('')
 
-    # try to get both movies
+    # Dynamically fetch missing movies and update movies_data and CSV
+    for title in [title1, title2]:
+        if title not in movies_data['title_x'].values:
+            try:
+                result = tmdb_movie.search(title)
+                if not result:
+                    continue
+                movie_id = result[0].id
+                details = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={tmdb.api_key}").json()
+                genre_names = ','.join([g['name'] for g in details.get("genres", [])])
+                new_row = {
+                    'title_x': title,
+                    'genres': genre_names,
+                    'comb': title + genre_names
+                }
+
+                # Append to CSV
+                csv_file_path = 'Main_data.csv'
+                file_exists = os.path.exists(csv_file_path)
+                with open(csv_file_path, 'a', newline='', encoding='utf-8') as file:
+                    writer = csv.DictWriter(file, fieldnames=['title_x', 'genres', 'comb'])
+                    if not file_exists or os.stat(csv_file_path).st_size == 0:
+                        writer.writeheader()
+                    writer.writerow(new_row)
+
+                # Append to DataFrame in memory
+                movies_data = pd.concat([movies_data, pd.DataFrame([new_row])], ignore_index=True)
+                movies_data['comb'] = movies_data['comb'].fillna('')
+
+            except Exception as e:
+                print(f"Error fetching or adding {title}: {e}")
+                return jsonify({'error': f"Could not process movie: {title}"}), 404
+
+    count_vec = CountVectorizer()
+    count_matrix = count_vec.fit_transform(movies_data['comb'])
+    cosine_sim = cosine_similarity(count_matrix, count_matrix)
+
     try:
-        movie1 = movies_data[movies_data['title_x'] == title1]['comb'].values[0]
-        movie2 = movies_data[movies_data['title_x'] == title2]['comb'].values[0]
+        idx1 = movies_data[movies_data['title_x'] == title1].index[0]
+        idx2 = movies_data[movies_data['title_x'] == title2].index[0]
     except IndexError:
         return jsonify({'error': 'One or both titles not found'}), 404
 
-    # ====== Approach 1: CountVectorizer + multiple distances ======
-    count_vec = CountVectorizer().fit(movies_data['comb'])
-    count_matrix = count_vec.transform([movie1, movie2])
+    sim = cosine_sim[idx1, idx2]
 
-    cosine_val = cosine_similarity(count_matrix[0], count_matrix[1])[0][0]
-    euclidean_val = euclidean_distances(count_matrix[0], count_matrix[1])[0][0]
-    manhattan_val = manhattan_distances(count_matrix[0], count_matrix[1])[0][0]
+    tfidf = TfidfVectorizer(stop_words='english').fit(movies_data['comb'])
+    features = tfidf.transform(movies_data['comb']).toarray()
 
-    # ====== Approach 2: Pretrained TF-IDF Vectorizer (vectorizer.pkl) ======
-    vec1 = vectorizer.transform([movie1])
-    vec2 = vectorizer.transform([movie2])
-    tfidf_cosine_val = cosine_similarity(vec1, vec2)[0][0]
+    euc = euclidean_distances([features[idx1]], [features[idx2]])[0][0]
+    man = manhattan_distances([features[idx1]], [features[idx2]])[0][0]
 
-    # return both
     return jsonify({
-        'movie1': title1,
-        'movie2': title2,
-        'countVectorizer': {
-            'cosineSimilarity': round(float(cosine_val), 4),
-            'euclideanDistance': round(float(euclidean_val), 4),
-            'manhattanDistance': round(float(manhattan_val), 4)
-        },
-        'tfidfVectorizer': {
-            'cosineSimilarity': round(float(tfidf_cosine_val), 4)
-        }
+        'cosineSimilarity': round(sim, 4),
+        'euclideanDistance': round(euc, 4),
+        'manhattanDistance': round(man, 4)
     })
+
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', debug=True, port=5001)
 
 # ==================render======================= 
 if __name__ == '__main__':
     app.run()
+
+
 
 
 
