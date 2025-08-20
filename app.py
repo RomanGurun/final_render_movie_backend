@@ -565,6 +565,8 @@
 
 # # ================================= RENDER ==================================================
 # ================== Final app.py ==================
+
+# final mac localhost runserver probelm solver 
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import pandas as pd
@@ -840,8 +842,6 @@ def findscore(title1, title2):
 # ==================render======================= 
 if __name__ == '__main__':
     app.run()
-
-
 
 
 
