@@ -565,8 +565,7 @@
 
 # # ================================= RENDER ==================================================
 # ================== Final app.py ==================
-
-# ================== IMPORTS ==================
+# final mac localhost runserver probelm solver 
 from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import pandas as pd
@@ -575,7 +574,7 @@ import random
 import re
 import bs4
 import numpy as np
-import pickle
+import pickle as pkl
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances, manhattan_distances
 from sklearn.metrics import pairwise_distances
@@ -587,7 +586,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-# ================== APP INIT ==================
 app = Flask(__name__)
 CORS(app)
 
@@ -595,18 +593,17 @@ tmdb = TMDb()
 tmdb.api_key = '2c5341f7625493017933e27e81b1425e'
 tmdb_movie = Movie()
 
-# ================== LOAD DATA ==================
+# Load CSVs once at start
 df2 = pd.read_csv("tmdb_5000_credits.csv")
 knn1 = pd.read_csv("tmdb_5000_movies.csv")
 
-# Load trained NLP model + vectorizer
-with open("vectorizer.pkl", "rb") as f:
-    vectorizer = pickle.load(f)
+# Load NLP vectorizer and model
+with open('vectorizerer.pkl', 'rb') as f:
+    vectorizer = pkl.load(f)
 
-with open("clf.pkl", "rb") as f:
-    clf = pickle.load(f)
+with open('nlp_model.pkl', 'rb') as f:
+    clt = pkl.load(f)
 
-# ================== HELPERS ==================
 url = [
     "https://api.themoviedb.org/3/discover/movie?api_key=2c5341f7625493017933e27e81b1425e&primary_release_year=2015&adult=false",
     "http://api.themoviedb.org/3/discover/movie?api_key=2c5341f7625493017933e27e81b1425e&primary_release_year=2014&adult=false",
@@ -618,14 +615,18 @@ def get_news():
     soup = bs4.BeautifulSoup(response.text, 'html.parser')
     data = [re.sub('[\n()]', "", d.text) for d in soup.find_all('div', class_='news-article__content')]
     image = [m['src'] for m in soup.find_all("img", class_="news-article__image")]
-    return [[image[i], data[i][1:-1]] for i in range(len(data))]
+    t_data = []
+    for i in range(len(data)):
+        t_data.append([image[i], data[i][1:-1]])
+    return t_data
 
 def getdirector(x):
     result = tmdb_movie.search(x)
     movie_id = result[0].id
     response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}/credits?api_key={tmdb.api_key}")
     data_json = response.json()
-    return [c['name'] for c in data_json['crew'] if c['job'] == 'Director'][:1]
+    director = [c['name'] for c in data_json['crew'] if c['job'] == 'Director']
+    return director[:1]
 
 def get_swipe():
     data = []
@@ -636,48 +637,20 @@ def get_swipe():
         data.extend(data_json["results"])
     return data
 
-def getreview(movie_name):
-    result = tmdb_movie.search(movie_name)
+def getreview(x):
+    result = tmdb_movie.search(x)
     movie_id = result[0].id
     response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?api_key={tmdb.api_key}&language=en-US&page=1")
-    return response.json()
+    data_json = response.json()
+    return data_json
 
-# ================== REVIEW SENTIMENT + SIMILARITY ==================
-def getrating(movie_name):
-    data = getreview(movie_name)
-    reviews = data.get("results", [])
-
-    if not reviews:
-        return {"error": "No reviews found."}
-
-    texts = [r["content"] for r in reviews]
-    X = vectorizer.transform(texts)
-    preds = clf.predict(X)
-
-    # sentiment tagging
-    results = []
-    for i, text in enumerate(texts):
-        results.append({
-            "review": text,
-            "sentiment": "positive" if preds[i] == 1 else "negative"
-        })
-
-    # similarities (cosine, euclidean, manhattan) with first review
-    similarities = []
-    if X.shape[0] > 1:
-        base = X[0]
-        for i in range(1, X.shape[0]):
-            similarities.append({
-                "review": texts[i],
-                "cosine": float(cosine_similarity(base, X[i])[0][0]),
-                "euclidean": float(euclidean_distances(base, X[i])[0][0]),
-                "manhattan": float(manhattan_distances(base, X[i])[0][0])
-            })
-
-    return {
-        "reviews": results,
-        "similarities_with_first": similarities
-    }
+def getrating(title):
+    movie_review = []
+    data = getreview(title)
+    for i in data['results']:
+        pred = clt.predict(vectorizer.transform([i['content']]))
+        movie_review.append({"review": i['content'], "rating": "Good" if pred[0] == 1 else "Bad"})
+    return movie_review
 
 def get_data2(x):
     result = tmdb_movie.search(x)
@@ -686,7 +659,6 @@ def get_data2(x):
     response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={tmdb.api_key}")
     return [response.json(), trailer.json()]
 
-# ================== ROUTES ==================
 @app.route('/')
 def index():
     return render_template("index.html")
@@ -715,7 +687,6 @@ def getswipe():
 def getnewsdata():
     return jsonify(get_news())
 
-# ================== RECOMMENDATION (content + collab) ==================
 def get_recommendations(title, user_id):
     movies_data = pd.read_csv('Main_data.csv')
     ratings_data = pd.read_csv('movie_rating.csv')
@@ -737,6 +708,7 @@ def get_recommendations(title, user_id):
         merged_data = pd.merge(movies_data, ratings_data, left_on='id', right_on='movieId')
         user_item_matrix = pd.pivot_table(merged_data, values='rating', index='userId', columns='movieId', fill_value=0)
         if user_id not in user_item_matrix.index:
+            print("User ID doesn't exist.")
             return None
         item_similarity = pairwise_distances(user_item_matrix.T, metric='cosine')
         min_rating, max_rating = user_item_matrix.min().min(), user_item_matrix.max().max()
@@ -755,6 +727,7 @@ def get_recommendations(title, user_id):
 
 @app.route('/send/<path:movie_name>/<string:userId>')
 def get(movie_name, userId):
+    print(f"Request received for movie: {movie_name}, userId: {userId}")
     val = get_recommendations(movie_name, userId)
     if val is None:
         return jsonify({"message": "movie or user not found in database"}), 404
@@ -795,15 +768,48 @@ def store_movie(movieId, movie1, userId):
         writer.writerow(data.values())
     return jsonify(data)
 
-# ================== COSINE / EUC / MANHATTAN BETWEEN 2 TITLES ==================
 @app.route('/score/<path:title1>/<path:title2>/')
 def findscore(title1, title2):
     title1, title2 = unquote(title1), unquote(title2)
     movies_data = pd.read_csv('Main_data.csv')
 
+    # Create 'comb' if missing and fill NaN with empty string
     if 'comb' not in movies_data.columns:
         movies_data['comb'] = movies_data['title_x'] + movies_data['genres']
     movies_data['comb'] = movies_data['comb'].fillna('')
+
+    # Dynamically fetch missing movies and update movies_data and CSV
+    for title in [title1, title2]:
+        if title not in movies_data['title_x'].values:
+            try:
+                result = tmdb_movie.search(title)
+                if not result:
+                    continue
+                movie_id = result[0].id
+                details = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={tmdb.api_key}").json()
+                genre_names = ','.join([g['name'] for g in details.get("genres", [])])
+                new_row = {
+                    'title_x': title,
+                    'genres': genre_names,
+                    'comb': title + genre_names
+                }
+
+                # Append to CSV
+                csv_file_path = 'Main_data.csv'
+                file_exists = os.path.exists(csv_file_path)
+                with open(csv_file_path, 'a', newline='', encoding='utf-8') as file:
+                    writer = csv.DictWriter(file, fieldnames=['title_x', 'genres', 'comb'])
+                    if not file_exists or os.stat(csv_file_path).st_size == 0:
+                        writer.writeheader()
+                    writer.writerow(new_row)
+
+                # Append to DataFrame in memory
+                movies_data = pd.concat([movies_data, pd.DataFrame([new_row])], ignore_index=True)
+                movies_data['comb'] = movies_data['comb'].fillna('')
+
+            except Exception as e:
+                print(f"Error fetching or adding {title}: {e}")
+                return jsonify({'error': f"Could not process movie: {title}"}), 404
 
     count_vec = CountVectorizer()
     count_matrix = count_vec.fit_transform(movies_data['comb'])
@@ -829,9 +835,19 @@ def findscore(title1, title2):
         'manhattanDistance': round(man, 4)
     })
 
-# ================== RENDER START ==================
+# if __name__ == '__main__':
+#     app.run(host='0.0.0.0', debug=True, port=5001)
+
+# ==================render======================= 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run()
+
+
+# ================== IMPORTS ==================
+
+# ================== RENDER START ==================
+# if __name__ == '__main__':
+#     app.run(host="0.0.0.0", port=5000, debug=True)
 
 
 
