@@ -597,13 +597,6 @@ tmdb_movie = Movie()
 df2 = pd.read_csv("tmdb_5000_credits.csv")
 knn1 = pd.read_csv("tmdb_5000_movies.csv")
 
-# Load NLP vectorizer and model
-with open('vectorizerer.pkl', 'rb') as f:
-    vectorizer = pkl.load(f)
-
-with open('nlp_model.pkl', 'rb') as f:
-    clt = pkl.load(f)
-
 url = [
     "https://api.themoviedb.org/3/discover/movie?api_key=2c5341f7625493017933e27e81b1425e&primary_release_year=2015&adult=false",
     "http://api.themoviedb.org/3/discover/movie?api_key=2c5341f7625493017933e27e81b1425e&primary_release_year=2014&adult=false",
@@ -637,21 +630,6 @@ def get_swipe():
         data.extend(data_json["results"])
     return data
 
-def getreview(x):
-    result = tmdb_movie.search(x)
-    movie_id = result[0].id
-    response = requests.get(f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?api_key={tmdb.api_key}&language=en-US&page=1")
-    data_json = response.json()
-    return data_json
-
-def getrating(title):
-    movie_review = []
-    data = getreview(title)
-    for i in data['results']:
-        pred = clt.predict(vectorizer.transform([i['content']]))
-        movie_review.append({"review": i['content'], "rating": "Good" if pred[0] == 1 else "Bad"})
-    return movie_review
-
 def get_data2(x):
     result = tmdb_movie.search(x)
     movie_id = result[0].id
@@ -671,9 +649,60 @@ def getnames():
 def getmovie(movie_name):
     return jsonify(get_data2(movie_name))
 
-@app.route('/getreview/<path:movie_name>')
+# ==============================GPt=====================================
+# ========== Dummy Review & Rating ==========
+def getreview(movie_name):
+    """Fetch reviews from TMDB API for a given movie name."""
+    search_url = f"https://api.themoviedb.org/3/search/movie?api_key={tmdb.api_key}&query={movie_name}"
+    search_res = requests.get(search_url).json()
+    if not search_res.get("results"):
+        return {"results": []}
+
+    movie_id = search_res["results"][0]["id"]
+    review_url = f"https://api.themoviedb.org/3/movie/{movie_id}/reviews?api_key={tmdb.api_key}&language=en-US"
+    return requests.get(review_url).json()
+
+def getrating(movie_name):
+    data = getreview(movie_name)
+    reviews = data.get("results", [])
+
+    if not reviews:
+        return {"error": "No reviews found."}
+
+    texts = [r["content"] for r in reviews]
+
+    # Dummy review analysis
+    results = []
+    for text in texts:
+        sentiment = random.choice(["positive", "negative"])
+        results.append({
+            "review": text,
+            "sentiment": sentiment
+        })
+
+    # Dummy similarity values (just random numbers)
+    similarities = []
+    if len(texts) > 1:
+        for i in range(1, len(texts)):
+            similarities.append({
+                "review": texts[i],
+                "cosine": round(random.uniform(0.5, 1.0), 3),
+                "euclidean": round(random.uniform(0.1, 5.0), 3),
+                "manhattan": round(random.uniform(0.1, 10.0), 3)
+            })
+
+    return {
+        "reviews": results,
+        "similarities_with_first": similarities
+    }
+
+@app.route("/getreview/<path:movie_name>")
 def getreviews(movie_name):
     return jsonify(getrating(movie_name))
+
+
+# ==============================GPt=====================================
+
 
 @app.route('/getdirector/<path:movie_name>')
 def getdirectorname(movie_name):
